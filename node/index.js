@@ -3,9 +3,15 @@ const app = express();
 const mysql = require("mysql");
 const bodyparser = require("body-parser");
 app.use(bodyparser.json());
+const ejs = require("ejs");
+const port = 3000
+
+app.set('view engine', 'ejs');
+app.use(express.json());
 
 
-var con = mysql.createConnection({
+const pool = mysql.createPool({
+    connectionLimit: 10,
     host: 'localhost',
     port: '3306',
     user: 'root',
@@ -13,35 +19,54 @@ var con = mysql.createConnection({
     database: 'empregos'
 });
 
-con.connect((err) => {
-    if (!err)
-        console.log("DB connection sucess!");
-    else
-        console.log("DB connection failed! \n ERROR: " + JSON.stringify(err, undefined, 2));
+const runSQL = (sql) => {
+    return new Promise(function(res, rej) {
+        pool.getConnection(function(err, connection) {
+            if (err) rej(err);
+            connection.query(sql, function(err, rows) {
+                if (err) rej(err);
+                else res(rows);
+                connection.release();
+            });
+        });
+    });
+}
+
+exports.listaVagas = (firstLetter) => {
+    var sql = "SELECT * FROM empregos WHERE UPPER(empresa) LIKE (UPPER(?))";
+    var params = [];
+    params.push(firstLetter + '%');
+    sql = mysql.format(sql, params);
+    return runSQL(sql);
+};
+app.get("/form", (req, res) => {
+    res.render("pages/form")
 });
-
-
-app.get("/", (req, res) => {
-    return res.send("Seja bem vindo ao meu site!")
-});
-
-//GET todas as vagas
-app.get("/vagas", (req, res) => {
-    var sql = "SELECT*FROM empregos.empregos";
-    con.query(sql, (err, result) => {
-        if (err) throw err;
-        return res.json(result);
+app.post('/form', (req, res) => {
+    this.listaVagas('').then((result) => {
+        res.render('pages/teste', {
+            empresas: result
+        });
     });
 });
 
-app.get("/vagas/:id", (req, res) => {
-    con.query("SELECT*FROM empregos.empregos WHERE idVag=?", [req.params], (err, rows, fields) => {
-        if (!err)
-            return res.json(rows);
-        else
-            console.log(err);
+app.get('/', (req, res) => {
+    var l = '';
+    if (req.query.firstLetter) l = req.query.firstLetter;
+    this.list(l).then((result) => {
+        res.render('pages/index', {
+            empresas: result
+        });
     });
-});
+})
+
+app.get('/chart', (req, res) => {
+    this.list('').then((result) => {
+        res.render('pages/chart', {
+            empresas: result
+        });
+    });
+})
 
 
-app.listen(4003, () => console.log("Conectado com sucesso! Acesse o site: http://localhost:4003"));
+app.listen(port, () => console.log("Conectado com sucesso! Acesse o site: http://localhost:3000"));
